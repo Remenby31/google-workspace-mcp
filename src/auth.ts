@@ -5,6 +5,7 @@ import { join } from "path";
 import { homedir } from "os";
 
 const CREDENTIALS_DIR = join(homedir(), ".google-workspace-mcp", "credentials");
+const LEGACY_CREDENTIALS_DIR = join(homedir(), ".google_workspace_mcp", "credentials");
 const CALLBACK_PORT = 8321;
 const REDIRECT_URI = `http://localhost:${CALLBACK_PORT}/oauth2callback`;
 
@@ -53,14 +54,41 @@ function credentialPath(email: string): string {
   return join(CREDENTIALS_DIR, `${encodeURIComponent(email)}.json`);
 }
 
-function loadCredentials(email: string): StoredCredentials | null {
-  const path = credentialPath(email);
+interface LegacyCredentials {
+  token: string;
+  refresh_token: string;
+  token_uri: string;
+  client_id: string;
+  client_secret: string;
+  scopes: string[];
+  expiry: string;
+}
+
+function loadLegacyCredentials(email: string): StoredCredentials | null {
+  const path = join(LEGACY_CREDENTIALS_DIR, `${email}.json`);
   if (!existsSync(path)) return null;
   try {
-    return JSON.parse(readFileSync(path, "utf-8")) as StoredCredentials;
+    const legacy = JSON.parse(readFileSync(path, "utf-8")) as LegacyCredentials;
+    return {
+      access_token: legacy.token,
+      refresh_token: legacy.refresh_token,
+      expiry_date: new Date(legacy.expiry).getTime(),
+      token_type: "Bearer",
+      scope: legacy.scopes.join(" "),
+    };
   } catch {
     return null;
   }
+}
+
+function loadCredentials(email: string): StoredCredentials | null {
+  const path = credentialPath(email);
+  if (existsSync(path)) {
+    try {
+      return JSON.parse(readFileSync(path, "utf-8")) as StoredCredentials;
+    } catch { /* fall through */ }
+  }
+  return loadLegacyCredentials(email);
 }
 
 function saveCredentials(email: string, creds: StoredCredentials): void {
