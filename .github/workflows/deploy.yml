@@ -1,13 +1,15 @@
 name: Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    needs: []
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Trigger deploy on mini PC
         run: |
