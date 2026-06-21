@@ -22,27 +22,24 @@ const TOOL_DESCRIPTION = `Google Workspace CLI. Commands:
   drive share/link/mkdir/cp  Manage files
   --as <email>            Use specific Google account`;
 
-const server = new McpServer({
-  name: "google",
-  version: "0.1.0",
-});
-
-server.tool(
-  "google",
-  TOOL_DESCRIPTION,
-  { command: z.string().describe("Command to execute (e.g. 'cal', 'mail search from:alice')") },
-  async ({ command }) => {
-    try {
-      const result = await executeCommand(command);
-      return { content: [{ type: "text", text: result }] };
-    } catch (err: any) {
-      if (err instanceof AuthRequiredError) {
-        return { content: [{ type: "text", text: err.message }], isError: true };
+function registerTool(server: McpServer) {
+  server.tool(
+    "google",
+    TOOL_DESCRIPTION,
+    { command: z.string().describe("Command to execute (e.g. 'cal', 'mail search from:alice')") },
+    async ({ command }) => {
+      try {
+        const result = await executeCommand(command);
+        return { content: [{ type: "text", text: result }] };
+      } catch (err: any) {
+        if (err instanceof AuthRequiredError) {
+          return { content: [{ type: "text", text: err.message }], isError: true };
+        }
+        return { content: [{ type: "text", text: `Error: ${err?.message || err}` }], isError: true };
       }
-      return { content: [{ type: "text", text: `Error: ${err?.message || err}` }], isError: true };
-    }
-  },
-);
+    },
+  );
+}
 
 const httpPort = process.argv.includes("--http")
   ? parseInt(process.env["HTTP_PORT"] || "3003", 10)
@@ -51,25 +48,32 @@ const httpPort = process.argv.includes("--http")
     : null;
 
 if (httpPort) {
-  const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-
+  // Stateless HTTP: create a fresh server+transport per request
   Bun.serve({
     port: httpPort,
     async fetch(req: Request): Promise<Response> {
       const url = new URL(req.url);
+
       if (url.pathname === "/health") {
         return Response.json({ status: "ok", name: "google-workspace-mcp" });
       }
+
       if (url.pathname === "/mcp" || url.pathname === "/mcp/") {
+        const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+        const server = new McpServer({ name: "google", version: "0.1.0" });
+        registerTool(server);
+        await server.connect(transport);
         return transport.handleRequest(req);
       }
+
       return new Response("Not found", { status: 404 });
     },
   } as any);
 
-  await server.connect(transport);
   console.error(`google-workspace-mcp listening on http://0.0.0.0:${httpPort}/mcp`);
 } else {
+  const server = new McpServer({ name: "google", version: "0.1.0" });
+  registerTool(server);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
