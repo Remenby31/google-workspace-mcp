@@ -1,7 +1,15 @@
 {
   "name": "google-workspace-mcp",
-  "module": "index.ts",
+  "version": "0.1.0",
+  "description": "Mono-tool MCP server for Google Calendar, Gmail & Drive — optimized for LLM context efficiency",
+  "module": "src/index.ts",
   "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "setup": "bun run src/setup.ts",
+    "test": "bun run test-suite.ts",
+    "typecheck": "bunx tsc --noEmit"
+  },
   "private": true,
   "devDependencies": {
     "@types/bun": "latest"

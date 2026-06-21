@@ -18,23 +18,30 @@ Most Google Workspace MCP servers expose **30-120 separate tools**, each with ve
 
 ## Quick Start
 
-### 1. Prerequisites
-
-- [Bun](https://bun.sh) runtime
-- Google Cloud project with Calendar, Gmail, and Drive APIs enabled
-- OAuth 2.0 Desktop Application credentials
-
-### 2. Install
+### One-command setup
 
 ```bash
 git clone https://github.com/Remenby31/google-workspace-mcp.git
 cd google-workspace-mcp
 bun install
+bun run setup
 ```
 
-### 3. Configure
+The interactive wizard will:
+1. Ask for your Google Cloud OAuth credentials
+2. Configure `~/.mcp.json` automatically
+3. Open your browser for first-time authorization
+4. Verify everything works by fetching your calendar
 
-Add to your MCP client configuration (e.g. `~/.mcp.json`):
+### Prerequisites
+
+- [Bun](https://bun.sh) runtime (`curl -fsSL https://bun.sh/install | bash`)
+- Google Cloud project with Calendar, Gmail, and Drive APIs enabled
+- OAuth 2.0 Desktop Application credentials ([setup guide](#google-cloud-setup))
+
+### Manual configuration
+
+If you prefer, add to your MCP client configuration (e.g. `~/.mcp.json`):
 
 ```json
 {
@@ -170,13 +177,21 @@ src/
 
 **Dependencies**: Only 2 runtime deps — `@modelcontextprotocol/sdk` and `googleapis`.
 
+## Security
+
+- **OAuth 2.1 with PKCE S256** — authorization code flow with proof key, no client secret exposure
+- **Ephemeral ports** — callback server binds to a random free port, no hardcoded port conflicts
+- **127.0.0.1 binding** — callback server only accepts local connections (RFC 8252)
+- **Auto-shutdown** — callback server stops after 2 minutes or after successful auth
+- **Local credential storage** — tokens stored in `~/.google-workspace-mcp/credentials/`, never transmitted
+
 ## Google Cloud Setup
 
 1. Create a project at [console.cloud.google.com](https://console.cloud.google.com)
 2. Enable APIs: Calendar, Gmail, Drive
 3. Configure OAuth consent screen (External, publish for no token expiry)
-4. Create OAuth credentials: Desktop Application
-5. Copy Client ID and Secret to your MCP config
+4. Create OAuth credentials: **Desktop Application**
+5. Run `bun run setup` and paste your Client ID and Secret
 
 ## License
 
