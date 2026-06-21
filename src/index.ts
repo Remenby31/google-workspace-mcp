@@ -59,6 +59,14 @@ if (httpPort) {
       }
 
       if (url.pathname === "/mcp" || url.pathname === "/mcp/") {
+        const apiKey = process.env["MCP_API_KEY"];
+        if (apiKey) {
+          const provided = req.headers.get("authorization")?.replace("Bearer ", "")
+            || url.searchParams.get("key");
+          if (provided !== apiKey) {
+            return Response.json({ error: "Unauthorized" }, { status: 401 });
+          }
+        }
         const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
         const server = new McpServer({ name: "google", version: "0.1.0" });
         registerTool(server);
