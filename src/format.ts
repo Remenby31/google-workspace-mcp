@@ -126,11 +126,11 @@ export function parseDateRange(input: string): [Date, Date] {
 
   if (lower === "next week" || lower === "semaine prochaine") {
     const monday = parseDate("next week");
-    return [monday, addDays(monday, 6)];
+    return [monday, endOfDay(addDays(monday, 6))];
   }
   if (lower === "this week" || lower === "cette semaine") {
     const monday = parseDate("this week");
-    return [monday, addDays(monday, 6)];
+    return [monday, endOfDay(addDays(monday, 6))];
   }
 
   // Range: "jun 25-28"

@@ -55,7 +55,7 @@ export async function handleDrive(auth: OAuth2Client, email: string, parts: stri
   const rawAction = parts[0]?.toLowerCase() || "";
   const action = ACTION_ALIASES[rawAction] || rawAction;
 
-  if (!rawAction) return "Usage: drive <search|ls|read|info|share|link|mkdir|cp>";
+  if (!rawAction) return "Usage: drive <search|ls|read|info|share|link|mkdir|cp|delete>";
 
   switch (action) {
     case "search": return searchFiles(drive, email, parts.slice(1));
@@ -66,8 +66,9 @@ export async function handleDrive(auth: OAuth2Client, email: string, parts: stri
     case "link": return shareableLink(drive, parts.slice(1));
     case "mkdir": return createFolder(drive, parts.slice(1));
     case "cp": return copyFile(drive, parts.slice(1));
+    case "delete": return deleteFile(drive, parts.slice(1));
     default:
-      return `Unknown drive action "${rawAction}". Available: search, ls, read, info, share, link, mkdir, cp`;
+      return `Unknown drive action "${rawAction}". Available: search, ls, read, info, share, link, mkdir, cp, delete`;
   }
 }
 
@@ -254,4 +255,24 @@ async function copyFile(drive: any, parts: string[]): Promise<string> {
 
   const id = registerIds(res.data.id);
   return `Copied: ${res.data.name} [${id}]`;
+}
+
+async function deleteFile(drive: any, parts: string[]): Promise<string> {
+  if (parts.length === 0) return "Missing file ID. Usage: drive delete <id>";
+  const fileId = resolveId(parts[0]!);
+
+  // Get file name before trashing
+  const meta = await drive.files.get({
+    fileId,
+    fields: "name",
+    supportsAllDrives: true,
+  });
+
+  await drive.files.update({
+    fileId,
+    requestBody: { trashed: true },
+    supportsAllDrives: true,
+  });
+
+  return `Moved to trash: ${meta.data.name}`;
 }

@@ -38,7 +38,8 @@ function extractTextBody(payload: any): string {
 }
 
 function stripHtml(html: string): string {
-  return html
+  let text = html
+    .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<br\s*\/?>/gi, "\n")
@@ -51,8 +52,15 @@ function stripHtml(html: string): string {
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/^[ \t]+/gm, (m) => m.length > 4 ? "" : m)
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  // Strip email signature markers (lines starting with "-- " or "--" at the end)
+  text = text.replace(/\n-- ?\n[\s\S]*$/, "").trim();
+
+  return text;
 }
 
 function getHeader(headers: any[], name: string): string {
@@ -130,12 +138,13 @@ export async function handleMail(auth: OAuth2Client, email: string, parts: strin
     case "thread": return readThread(gmail, parts.slice(1));
     case "send": return sendMessage(gmail, parts.slice(1));
     case "reply": return replyMessage(gmail, parts.slice(1));
+    case "forward": return forwardMessage(gmail, parts.slice(1));
     case "draft": return draftMessage(gmail, parts.slice(1));
     case "labels": return listLabels(gmail, email);
     case "tag": return tagMessage(gmail, parts.slice(1));
     case "attach": return downloadAttachment(gmail, parts.slice(1));
     default:
-      return `Unknown mail action "${rawAction}". Available: search, read, thread, send, reply, draft, labels, tag, attach`;
+      return `Unknown mail action "${rawAction}". Available: search, read, thread, send, reply, forward, draft, labels, tag, attach`;
   }
 }
 
@@ -252,6 +261,41 @@ async function replyMessage(gmail: any, parts: string[]): Promise<string> {
 
   const id = registerIds(res.data.id);
   return `Replied to ${to}: "${reSubject}" [${id}]`;
+}
+
+async function forwardMessage(gmail: any, parts: string[]): Promise<string> {
+  const body = extractBody(parts);
+  if (parts.length < 2) return "Usage: mail forward <message_id> <to> --body \"comment\"";
+  const msgId = resolveId(parts[0]!);
+  const to = parts[1]!;
+
+  const original = await gmail.users.messages.get({ userId: "me", id: msgId, format: "full" });
+  const headers = original.data.payload?.headers || [];
+  const subject = getHeader(headers, "Subject");
+  const fwdSubject = subject.startsWith("Fwd:") ? subject : `Fwd: ${subject}`;
+  const originalFrom = getHeader(headers, "From");
+  const originalDate = getHeader(headers, "Date");
+  const originalBody = extractTextBody(original.data.payload);
+
+  const fwdBody = [
+    body || "",
+    "",
+    "---------- Forwarded message ----------",
+    `From: ${originalFrom}`,
+    `Date: ${originalDate}`,
+    `Subject: ${subject}`,
+    "",
+    originalBody,
+  ].join("\n");
+
+  const raw = createRawEmail(to, fwdSubject, fwdBody);
+  const res = await gmail.users.messages.send({
+    userId: "me",
+    requestBody: { raw },
+  });
+
+  const id = registerIds(res.data.id);
+  return `Forwarded to ${to}: "${fwdSubject}" [${id}]`;
 }
 
 async function draftMessage(gmail: any, parts: string[]): Promise<string> {
