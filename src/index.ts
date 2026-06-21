@@ -66,6 +66,17 @@ if (httpPort) {
         return transport.handleRequest(req);
       }
 
+      if (url.pathname === "/deploy" && req.method === "POST") {
+        const secret = process.env["DEPLOY_SECRET"];
+        const auth = req.headers.get("authorization");
+        if (!secret || auth !== `Bearer ${secret}`) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+        const { exec } = require("child_process");
+        exec("git pull && sudo systemctl restart google-workspace-mcp", { cwd: process.cwd() });
+        return Response.json({ status: "deploying" });
+      }
+
       if (url.pathname === "/" || url.pathname === "") {
         return new Response(landingPage(), { headers: { "Content-Type": "text/html" } });
       }
