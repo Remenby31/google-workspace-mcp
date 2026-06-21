@@ -134,8 +134,13 @@ export async function executeCommand(command: string): Promise<string> {
   const parts = splitCommand(command.trim());
   if (parts.length === 0) return helpText();
 
-  // Extract --as email option
+  // Extract global options
   const asEmail = extractOption(parts, "--as");
+  const wantJson = extractFlag(parts, "--json");
+  const pageStr = extractOption(parts, "--page");
+  const page = pageStr ? parseInt(pageStr, 10) : 1;
+  const pageSize = 15;
+
   const email = asEmail || getDefaultEmail();
 
   const rawService = parts.shift()!;
@@ -151,10 +156,25 @@ export async function executeCommand(command: string): Promise<string> {
   // Get authenticated client
   const auth = await getAuthenticatedClient(email);
 
+  let result: string;
   switch (service) {
-    case "cal": return handleCalendar(auth, email, parts);
-    case "mail": return handleMail(auth, email, parts);
-    case "drive": return handleDrive(auth, email, parts);
+    case "cal": result = await handleCalendar(auth, email, parts); break;
+    case "mail": result = await handleMail(auth, email, parts); break;
+    case "drive": result = await handleDrive(auth, email, parts); break;
     default: return helpText();
   }
+
+  // Pagination: split by lines, extract page
+  if (page > 1) {
+    const lines = result.split("\n");
+    const header = lines[0] || "";
+    const items = lines.slice(1);
+    const start = (page - 1) * pageSize;
+    const paged = items.slice(start, start + pageSize);
+    if (paged.length === 0) return `No more results (page ${page})`;
+    const total = Math.ceil(items.length / pageSize);
+    result = `${header} (page ${page}/${total})\n${paged.join("\n")}`;
+  }
+
+  return result;
 }
