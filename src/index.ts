@@ -4,7 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { executeCommand } from "./commands.ts";
-import { AuthRequiredError } from "./auth.ts";
+import { AuthRequiredError, handleOAuthCallback } from "./auth.ts";
 
 const TOOL_DESCRIPTION = `Google Workspace CLI. Commands:
   cal [date]              Calendar events (default: today+3d)
@@ -72,6 +72,10 @@ if (httpPort) {
         registerTool(server);
         await server.connect(transport);
         return transport.handleRequest(req);
+      }
+
+      if (url.pathname === "/oauth2callback") {
+        return handleOAuthCallback(req);
       }
 
       if (url.pathname === "/deploy" && req.method === "POST") {

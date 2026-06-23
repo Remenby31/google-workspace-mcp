@@ -8,6 +8,7 @@ import { randomBytes, createHash } from "crypto";
 const CREDENTIALS_DIR = join(homedir(), ".google-workspace-mcp", "credentials");
 const LEGACY_CREDENTIALS_DIR = join(homedir(), ".google_workspace_mcp", "credentials");
 const AUTH_TIMEOUT_MS = 120_000;
+const PUBLIC_URL = process.env["PUBLIC_URL"]; // e.g. https://google.remenby.fr
 
 const SCOPES = [
   "openid",
@@ -161,12 +162,26 @@ export async function getAuthenticatedClient(email: string): Promise<OAuth2Clien
 let callbackServer: ReturnType<typeof Bun.serve> | null = null;
 let authTimeout: ReturnType<typeof setTimeout> | null = null;
 
+// Shared state for pending auth flows (used by remote callback)
+let pendingAuth: { email: string; verifier: string; redirectUri: string } | null = null;
+
+export function getPendingAuth() { return pendingAuth; }
+export function clearPendingAuth() { pendingAuth = null; }
+
 async function startAuthFlow(email: string): Promise<never> {
   const pkce = generatePKCE();
 
-  // Ephemeral port — let OS pick a free port
-  const port = await startCallbackServer(email, pkce.verifier);
-  const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
+  let redirectUri: string;
+
+  if (PUBLIC_URL) {
+    // Remote mode: use public URL for callback
+    redirectUri = `${PUBLIC_URL}/oauth2callback`;
+    pendingAuth = { email, verifier: pkce.verifier, redirectUri };
+  } else {
+    // Local mode: ephemeral port
+    const port = await startCallbackServer(email, pkce.verifier);
+    redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
+  }
 
   const client = createOAuth2Client(redirectUri);
   const authUrl = client.generateAuthUrl({
@@ -178,8 +193,8 @@ async function startAuthFlow(email: string): Promise<never> {
     code_challenge_method: "S256" as any,
   });
 
-  // Open browser (cross-platform)
-  openBrowser(authUrl);
+  // Open browser (cross-platform) — only works locally
+  if (!PUBLIC_URL) openBrowser(authUrl);
 
   throw new AuthRequiredError(email, authUrl);
 }
@@ -277,6 +292,51 @@ async function startCallbackServer(email: string, codeVerifier: string): Promise
   const assignedPort = callbackServer!.port;
   if (!assignedPort) throw new Error("Failed to bind callback server to a port");
   return assignedPort;
+}
+
+// ── Remote callback handler (used by index.ts in HTTP mode) ─────────
+export async function handleOAuthCallback(req: Request): Promise<Response> {
+  if (!pendingAuth) {
+    return new Response(errorPage("No pending auth flow"), { headers: { "Content-Type": "text/html" } });
+  }
+
+  const url = new URL(req.url);
+  const error = url.searchParams.get("error");
+  if (error) {
+    clearPendingAuth();
+    return new Response(errorPage(url.searchParams.get("error_description") || error), { headers: { "Content-Type": "text/html" } });
+  }
+
+  const code = url.searchParams.get("code");
+  if (!code) {
+    clearPendingAuth();
+    return new Response(errorPage("No authorization code received"), { headers: { "Content-Type": "text/html" } });
+  }
+
+  try {
+    const { email, verifier, redirectUri } = pendingAuth;
+    const client = createOAuth2Client(redirectUri);
+    const { tokens } = await client.getToken({ code, codeVerifier: verifier });
+
+    client.setCredentials(tokens);
+    const oauth2 = google.oauth2({ version: "v2", auth: client });
+    const userInfo = await oauth2.userinfo.get();
+    const actualEmail = userInfo.data.email || email;
+
+    saveCredentials(actualEmail, {
+      access_token: tokens.access_token!,
+      refresh_token: tokens.refresh_token!,
+      expiry_date: tokens.expiry_date!,
+      token_type: tokens.token_type || "Bearer",
+      scope: tokens.scope || SCOPES.join(" "),
+    });
+
+    clearPendingAuth();
+    return new Response(successPage(actualEmail), { headers: { "Content-Type": "text/html" } });
+  } catch (err) {
+    clearPendingAuth();
+    return new Response(errorPage(String(err)), { headers: { "Content-Type": "text/html" } });
+  }
 }
 
 function shutdownServer(): void {
